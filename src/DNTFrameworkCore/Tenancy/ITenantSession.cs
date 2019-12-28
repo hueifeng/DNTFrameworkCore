@@ -1,5 +1,4 @@
-﻿using System;
-using DNTFrameworkCore.Dependency;
+﻿using DNTFrameworkCore.Dependency;
 using DNTFrameworkCore.Runtime;
 
 namespace DNTFrameworkCore.Tenancy
@@ -31,9 +30,5 @@ namespace DNTFrameworkCore.Tenancy
         ///     <see cref="IUserSession.UserId" />.
         /// </summary>
         string ImpersonatorTenantId { get; }
-
-        Tenant Tenant { get; }
-
-        IDisposable UseTenantId(string tenantId);
     }
 }

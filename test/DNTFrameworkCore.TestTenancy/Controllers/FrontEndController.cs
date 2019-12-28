@@ -1,6 +1,3 @@
-using DNTFrameworkCore.Tenancy;
-using Microsoft.AspNetCore.Mvc;
-
 namespace DNTFrameworkCore.TestTenancy.Controllers
 {
     [Route("api/[controller]")]
@@ -16,7 +13,7 @@ namespace DNTFrameworkCore.TestTenancy.Controllers
         [HttpGet("[action]")]
         public IActionResult TenantInfo()
         {
-            return Ok(_tenantSession.Tenant);
+            return Ok(_tenantSession);
         }
     }
 }

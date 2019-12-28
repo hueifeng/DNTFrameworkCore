@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using DNTFrameworkCore.EFCore.Context.Extensions;
@@ -10,7 +12,9 @@ using DNTFrameworkCore.EFCore.Context.Hooks;
 using DNTFrameworkCore.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using Newtonsoft.Json;
 using DbException = DNTFrameworkCore.Exceptions.DbException;
 
 namespace DNTFrameworkCore.EFCore.Context
@@ -18,6 +22,7 @@ namespace DNTFrameworkCore.EFCore.Context
     public abstract class DbContextCore : DbContext, IUnitOfWork
     {
         private readonly IEnumerable<IHook> _hooks;
+        private readonly List<string> _ignoredHookList = new List<string>();
 
         protected DbContextCore(DbContextOptions options, IEnumerable<IHook> hooks) : base(options)
         {
@@ -25,12 +30,12 @@ namespace DNTFrameworkCore.EFCore.Context
         }
 
         public DbConnection Connection => Database.GetDbConnection();
-        public bool HasActiveTransaction => Transaction != null;
+        public bool HasTransaction => Transaction != null;
         public IDbContextTransaction Transaction { get; private set; }
 
         public IDbContextTransaction BeginTransaction(IsolationLevel isolationLevel = IsolationLevel.ReadCommitted)
         {
-            if (Transaction != null) return null;
+            if (HasTransaction) return Transaction;
 
             return Transaction = Database.BeginTransaction(isolationLevel);
         }
@@ -38,14 +43,14 @@ namespace DNTFrameworkCore.EFCore.Context
         public async Task<IDbContextTransaction> BeginTransactionAsync(
             IsolationLevel isolationLevel = IsolationLevel.ReadCommitted)
         {
-            if (Transaction != null) return null;
+            if (HasTransaction) return Transaction;
 
             return Transaction = await Database.BeginTransactionAsync(isolationLevel);
         }
 
         public void CommitTransaction()
         {
-            if (Transaction == null) throw new InvalidOperationException("Transaction is null");
+            if (!HasTransaction) throw new NullReferenceException("Please call `BeginTransaction()` method first.");
 
             try
             {
@@ -68,9 +73,11 @@ namespace DNTFrameworkCore.EFCore.Context
 
         public void RollbackTransaction()
         {
+            if (!HasTransaction) throw new NullReferenceException("Please call `BeginTransaction()` method first.");
+
             try
             {
-                Transaction?.Rollback();
+                Transaction.Rollback();
             }
             finally
             {
@@ -82,6 +89,11 @@ namespace DNTFrameworkCore.EFCore.Context
             }
         }
 
+        public void IgnoreHook(string hookName)
+        {
+            _ignoredHookList.Add(hookName);
+        }
+
         public void UseTransaction(DbTransaction transaction)
         {
             Database.UseTransaction(transaction);
@@ -89,22 +101,31 @@ namespace DNTFrameworkCore.EFCore.Context
 
         public void UseConnectionString(string connectionString)
         {
-            Database.GetDbConnection().ConnectionString = connectionString;
+            Connection.ConnectionString = connectionString;
         }
 
-        public int ExecuteSqlCommand(string query)
+        public string EntityHash<TEntity>(TEntity entity) where TEntity : class
         {
-            return Database.ExecuteSqlCommand(query);
+            var row = Entry(entity).ToDictionary(p => p.Metadata.Name != EFCore.Hash &&
+                                                      !p.Metadata.ValueGenerated.HasFlag(ValueGenerated.OnUpdate) &&
+                                                      !p.Metadata.IsShadowProperty());
+            return EntityHash<TEntity>(row);
         }
 
-        public int ExecuteSqlCommand(string query, params object[] parameters)
+        protected virtual string EntityHash<TEntity>(Dictionary<string, object> row) where TEntity : class
         {
-            return Database.ExecuteSqlCommand(query, parameters);
+            var json = JsonConvert.SerializeObject(row, Formatting.Indented);
+            using (var hashAlgorithm = SHA256.Create())
+            {
+                var byteValue = Encoding.UTF8.GetBytes(json);
+                var byteHash = hashAlgorithm.ComputeHash(byteValue);
+                return Convert.ToBase64String(byteHash);
+            }
         }
 
-        public void TrackGraph<TEntity>(TEntity entity, Action<EntityEntryGraphNode> callback) where TEntity : class
+        public void TrackGraph(object rootEntity, Action<EntityEntryGraphNode> callback)
         {
-            ChangeTracker.TrackGraph(entity, callback);
+            ChangeTracker.TrackGraph(rootEntity, callback);
         }
 
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -123,7 +144,10 @@ namespace DNTFrameworkCore.EFCore.Context
 
                 ExecuteHooks<IPostActionHook>(entryList);
 
-                SavedChanges(new EntityChangeContext(names, entryList));
+                //for RowIntegrity scenarios
+                await base.SaveChangesAsync(true, cancellationToken);
+
+                OnSaveCompleted(new EntityChangeContext(names, entryList));
             }
             catch (DbUpdateConcurrencyException e)
             {
@@ -153,31 +177,44 @@ namespace DNTFrameworkCore.EFCore.Context
 
                 ExecuteHooks<IPostActionHook>(entryList);
 
-                SavedChanges(new EntityChangeContext(names, entryList));
+                //for RowIntegrity scenarios
+                base.SaveChanges(true);
+
+                OnSaveCompleted(new EntityChangeContext(names, entryList));
             }
             catch (DbUpdateConcurrencyException e)
             {
                 throw new DbConcurrencyException(e.Message, e);
             }
-            catch (DbException e)
+            catch (DbUpdateException e)
             {
-                throw new Exceptions.DbException(e.Message, e);
+                throw new DbException(e.Message, e);
             }
 
             return result;
         }
 
-        public Task<int> ExecuteSqlCommandAsync(string query)
+        public int ExecuteSqlInterpolatedCommand(FormattableString query)
         {
-            return Database.ExecuteSqlCommandAsync(query);
+            return Database.ExecuteSqlInterpolated(query);
         }
 
-        public Task<int> ExecuteSqlCommandAsync(string query, params object[] parameters)
+        public int ExecuteSqlRawCommand(string query, params object[] parameters)
         {
-            return Database.ExecuteSqlCommandAsync(query, parameters);
+            return Database.ExecuteSqlRaw(query, parameters);
         }
 
-        protected virtual void SavedChanges(EntityChangeContext context)
+        public Task<int> ExecuteSqlInterpolatedCommandAsync(FormattableString query)
+        {
+            return Database.ExecuteSqlInterpolatedAsync(query);
+        }
+
+        public Task<int> ExecuteSqlRawCommandAsync(string query, params object[] parameters)
+        {
+            return Database.ExecuteSqlRawAsync(query, parameters);
+        }
+
+        protected virtual void OnSaveCompleted(EntityChangeContext context)
         {
         }
 
@@ -185,7 +222,10 @@ namespace DNTFrameworkCore.EFCore.Context
         {
             foreach (var entry in entryList)
             {
-                var hooks = _hooks.OfType<THook>().Where(x => x.HookState == entry.State).OrderBy(hook => hook.Order);
+                var hooks = _hooks.OfType<THook>()
+                    .Where(hook => !_ignoredHookList.Contains(hook.Name))
+                    .Where(hook => hook.HookState == entry.State).OrderBy(hook => hook.Order);
+
                 foreach (var hook in hooks)
                 {
                     var metadata = new HookEntityMetadata(entry);

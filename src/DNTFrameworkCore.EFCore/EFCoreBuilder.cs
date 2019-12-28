@@ -30,7 +30,6 @@ namespace DNTFrameworkCore.EFCore
             services.AddScoped(provider => (IUnitOfWork) provider.GetRequiredService(typeof(TDbContext)));
             services.AddTransient<TransactionInterceptor>();
             services.AddScoped<IKeyValueService, KeyValueService>();
-            services.AddSingleton<IProtectionStore, ProtectionStore>();
             services.AddTransient<IHook, PreUpdateRowVersionHook>();
 
             return new EFCoreBuilder(services, typeof(TDbContext));
@@ -48,6 +47,11 @@ namespace DNTFrameworkCore.EFCore
         public IServiceCollection Services { get; }
         public Type ContextType { get; }
 
+        public EFCoreBuilder WithProtectionStore()
+        {
+            Services.AddSingleton<IProtectionStore, ProtectionStore>();
+            return this;
+        }
         public EFCoreBuilder WithTransactionOptions(Action<TransactionOptions> options)
         {
             Services.Configure(options);
@@ -56,7 +60,7 @@ namespace DNTFrameworkCore.EFCore
 
         public EFCoreBuilder WithRowLevelSecurityHook<TUserId>() where TUserId : IEquatable<TUserId>
         {
-            Services.AddTransient<IHook, PreInsertHasRowLevelSecurityHook<TUserId>>();
+            Services.AddTransient<IHook, PreInsertRowLevelSecurityHook<TUserId>>();
             return this;
         }
 
@@ -73,17 +77,15 @@ namespace DNTFrameworkCore.EFCore
             return this;
         }
 
-        public EFCoreBuilder WithRowIntegrityHook<T>() where T : class, IRowIntegrityHashAlgorithm
+        public EFCoreBuilder WithRowIntegrityHook()
         {
-            Services.AddTransient<IRowIntegrityHashAlgorithm, T>();
-            Services.AddTransient<IHook, PreInsertRowIntegrityHook>();
-            Services.AddTransient<IHook, PreUpdateRowIntegrityHook>();
+            Services.AddTransient<IHook, RowIntegrityHook>();
             return this;
         }
 
-        public EFCoreBuilder WithSoftDeleteHook()
+        public EFCoreBuilder WithDeletedEntityHook()
         {
-            Services.AddTransient<IHook, PreDeleteSoftDeleteEntityHook>();
+            Services.AddTransient<IHook, PreDeleteDeletedEntityHook>();
             return this;
         }
     }

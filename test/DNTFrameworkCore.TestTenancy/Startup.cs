@@ -1,20 +1,5 @@
-﻿using DNTFrameworkCore.FluentValidation;
-using DNTFrameworkCore.Tenancy;
-using DNTFrameworkCore.TestTenancy.Application;
-using DNTFrameworkCore.TestTenancy.Hubs;
-using DNTFrameworkCore.TestTenancy.Infrastructure;
-using DNTFrameworkCore.TestTenancy.Resources;
+﻿using DNTFrameworkCore.TestTenancy.Hubs;
 using DNTFrameworkCore.TestTenancy.Tenancy;
-using DNTFrameworkCore.Web;
-using DNTFrameworkCore.Web.Tenancy;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.IdentityModel.Tokens;
-using Newtonsoft.Json;
 
 namespace DNTFrameworkCore.TestTenancy
 {
@@ -34,15 +19,18 @@ namespace DNTFrameworkCore.TestTenancy
 
             services.AddTenancy()
                 .WithTenantSession()
-                .WithTenantContainer()
                 .WithStore<InMemoryTenantStore>()
                 .WithResolutionStrategy<HostResolutionStrategy>();
-
+            
             services.AddDNTFrameworkCore()
-                .AddModelValidation()
-                .AddFluentModelValidation()
-                .AddWebApp()
-                .AddProtection();
+                .WithModelValidation()
+                .WithFluentValidation()
+                .WithMemoryCache()
+                .WithSecurityService()
+                .WithBackgroundTaskQueue()
+                .WithRandomNumberProvider();
+
+            services.AddWebApp().AddProtection();
 
             services.AddInfrastructure(Configuration);
             services.AddApplication(Configuration);
@@ -59,7 +47,7 @@ namespace DNTFrameworkCore.TestTenancy
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             if (env.IsDevelopment())
             {
@@ -103,12 +91,15 @@ namespace DNTFrameworkCore.TestTenancy
                 app.UseHsts();
             }
 
-            app.UseTenancy()
-                .UseTenantContainer();
-
-            //app.UseHttpsRedirection();
+            app.UseHttpsRedirection();
+            
+            app.UseTenancy();
+            
             app.UseAuthentication();
+            app.UseAuthorization();
+            
             app.UseMvc();
+            
             app.UseSignalR(routes => { routes.MapHub<NotificationHub>("/api/notificationhub"); });
             app.UseSwagger();
             app.UseSwaggerUI(c => { c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1"); });

@@ -1,20 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
-using System.Security.Claims;
-using System.Threading.Tasks;
-using DNTFrameworkCore.Cryptography;
-using DNTFrameworkCore.Dependency;
 using DNTFrameworkCore.EFCore.Context;
-using DNTFrameworkCore.Extensions;
-using DNTFrameworkCore.Functional;
-using DNTFrameworkCore.Runtime;
 using DNTFrameworkCore.TestTenancy.Domain.Identity;
 using DNTFrameworkCore.TestTenancy.Resources;
-using DNTFrameworkCore.Web.Security;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace DNTFrameworkCore.TestTenancy.Authentication
 {
@@ -157,7 +143,7 @@ namespace DNTFrameworkCore.TestTenancy.Authentication
 
             //Todo: recommended approach to minimize size of  token/cookie
             // permissions=new[] {"48", "65", "6C", "6C", "6F", "20", "57", "6F", "72", "6C", "64", "21"};
-            // claims.Add(new Claim(UserClaimTypes.PackedPermission, permissions.PackPermissionsToString()));
+            // claims.Add(new Claim(UserClaimTypes.PackedPermission, permissions.PackToString(PermissionConstant.PackingSymbol)));
 
             //Todo: Set TenantId claim in MultiTenancy senarios     
             // claims.Add(new Claim(UserClaimTypes.TenantId, user.TenantId.ToString(), ClaimValueTypes.Integer64,

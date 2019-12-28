@@ -6,10 +6,11 @@ using System.Xml.Linq;
 using DNTFrameworkCore.Cryptography;
 using DNTFrameworkCore.Dependency;
 using DNTFrameworkCore.EFCore.Context;
+using Microsoft.EntityFrameworkCore;
 
 namespace DNTFrameworkCore.EFCore.Protection
 {
-    public class ProtectionStore : IProtectionStore
+    internal sealed class ProtectionStore : IProtectionStore
     {
         private readonly IServiceProvider _provider;
 
@@ -18,17 +19,16 @@ namespace DNTFrameworkCore.EFCore.Protection
             _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         }
 
-        public IReadOnlyList<XElement> ReadElements()
+        public IReadOnlyCollection<XElement> FetchElements()
         {
             return _provider.RunScoped<ReadOnlyCollection<XElement>, IUnitOfWork>(uow =>
             {
-                var dataProtectionKeys = uow.Set<ProtectionKey>();
-                return new ReadOnlyCollection<XElement>(dataProtectionKeys.Select(k => XElement.Parse(k.XmlValue))
-                    .ToList());
+                return uow.Set<ProtectionKey>().AsNoTracking().Select(k => XElement.Parse(k.XmlValue)).ToList()
+                    .AsReadOnly();
             });
         }
 
-        public void StoreElement(XElement element, string friendlyName)
+        public void SaveElement(XElement element, string friendlyName)
         {
             // We need a separate context to call its SaveChanges several times,
             // without using the current request's context and changing its internal state.
@@ -38,7 +38,7 @@ namespace DNTFrameworkCore.EFCore.Protection
                 var entity = keys.SingleOrDefault(k => k.FriendlyName == friendlyName);
                 if (entity != null)
                 {
-                    entity.XmlValue = element.ToString();
+                    entity.XmlValue = element.ToString(SaveOptions.DisableFormatting);
                     keys.Update(entity);
                 }
                 else
@@ -46,7 +46,7 @@ namespace DNTFrameworkCore.EFCore.Protection
                     keys.Add(new ProtectionKey
                     {
                         FriendlyName = friendlyName,
-                        XmlValue = element.ToString()
+                        XmlValue = element.ToString(SaveOptions.DisableFormatting)
                     });
                 }
 

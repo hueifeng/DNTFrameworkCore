@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DNTFrameworkCore.EFCore.Configuration
 {
-    internal class KeyValueService : ApplicationService, IKeyValueService
+    internal sealed class KeyValueService : ApplicationService, IKeyValueService
     {
         private readonly IUnitOfWork _uow;
         private readonly DbSet<KeyValue> _values;
@@ -21,7 +21,7 @@ namespace DNTFrameworkCore.EFCore.Configuration
 
         public async Task SaveValueAsync(string key, string value)
         {
-            var record = await _values.SingleOrDefaultAsync(v => v.Key == key);
+            var record = await _values.FirstOrDefaultAsync(v => v.Key == key);
             if (record == null)
             {
                 _values.Add(new KeyValue
@@ -40,7 +40,7 @@ namespace DNTFrameworkCore.EFCore.Configuration
 
         public async Task<Maybe<string>> FindValueAsync(string key)
         {
-            var record = await _values.SingleOrDefaultAsync(v => v.Key == key);
+            var record = await _values.FirstOrDefaultAsync(v => v.Key == key);
             return record == null ? Maybe<string>.None : record.Value;
         }
     }
